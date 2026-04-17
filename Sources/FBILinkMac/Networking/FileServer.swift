@@ -117,18 +117,26 @@ private final class RequestHandler: @unchecked Sendable {
     }
 
     func start() async {
-        connection.stateUpdateHandler = { [weak self] state in
-            guard let self else { return }
+        // Strong capture: the connection keeps this closure alive, which keeps us alive
+        // for the lifetime of the request. We break the cycle by nil-ing the handler
+        // on .cancelled/.failed so the handler can deallocate.
+        connection.stateUpdateHandler = { [self] state in
             switch state {
             case .ready: self.readRequest()
             case .failed(let err):
                 Task { [server] in await server?.emit(.error("Connection failed: \(err.localizedDescription)")) }
-                self.connection.cancel()
-            case .cancelled: break
+                self.teardown()
+            case .cancelled:
+                self.teardown()
             default: break
             }
         }
         connection.start(queue: queue)
+    }
+
+    private func teardown() {
+        connection.stateUpdateHandler = nil
+        connection.cancel()
     }
 
     private var clientHost: String {
@@ -172,6 +180,8 @@ private final class RequestHandler: @unchecked Sendable {
         let method = String(parts[0])
         let rawPath = String(parts[1])
         let path = rawPath.removingPercentEncoding ?? rawPath
+        let host = clientHost
+        Task { [server] in await server?.emit(.log("HTTP \(method) \(rawPath) from \(host)")) }
         guard method == "GET" else { sendStatus(405, body: "Method not allowed"); return }
         Task { await self.route(decodedPath: path, rawPath: rawPath) }
     }
