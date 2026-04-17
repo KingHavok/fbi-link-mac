@@ -84,10 +84,15 @@ enum ARPDiscovery {
                 let sin = base.load(fromByteOffset: sinOffset, as: sockaddr_in.self)
                 var addr = sin.sin_addr
                 var ipBuf = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
-                let ipPtr = ipBuf.withUnsafeMutableBufferPointer { ptr -> UnsafePointer<CChar>? in
-                    inet_ntop(AF_INET, &addr, ptr.baseAddress, socklen_t(INET_ADDRSTRLEN))
+                // Resolve the string inside the closure — the pointer returned by
+                // inet_ntop is into ipBuf's storage, which isn't guaranteed to
+                // stay alive after withUnsafeMutableBufferPointer returns.
+                let ip = ipBuf.withUnsafeMutableBufferPointer { ptr -> String in
+                    guard let base = ptr.baseAddress,
+                          inet_ntop(AF_INET, &addr, base, socklen_t(INET_ADDRSTRLEN)) != nil
+                    else { return "" }
+                    return String(cString: base)
                 }
-                let ip = ipPtr.map { String(cString: $0) } ?? ""
                 let sinLen = Int(sin.sin_len)
                 let padded = (sinLen + 3) & ~3
                 let sdlOffset = sinOffset + padded
