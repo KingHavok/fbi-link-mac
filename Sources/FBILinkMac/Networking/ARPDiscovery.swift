@@ -64,13 +64,23 @@ enum ARPDiscovery {
         lastDiagnostic = "sysctl ok, bytes=\(needed)"
 
         var entries: [ARPEntry] = []
-        return buffer.withUnsafeBytes { raw -> [ARPEntry] in
-            guard let base = raw.baseAddress else { return [] }
+        var loopIterations = 0
+        var loopBreakReason = "end-of-buffer"
+        var firstFewMsgLens: [Int] = []
+        var firstFewMacLens: [Int] = []
+        var macLenMismatchCount = 0
+        let diagnostic = buffer.withUnsafeBytes { raw -> String in
+            guard let base = raw.baseAddress else { return "no base address" }
             var offset = 0
             while offset < needed {
+                loopIterations += 1
                 let rtm = base.load(fromByteOffset: offset, as: rt_msghdr.self)
                 let msgLen = Int(rtm.rtm_msglen)
-                guard msgLen > 0, offset + msgLen <= needed else { break }
+                if firstFewMsgLens.count < 5 { firstFewMsgLens.append(msgLen) }
+                guard msgLen > 0, offset + msgLen <= needed else {
+                    loopBreakReason = "bad msglen \(msgLen) at offset \(offset) (needed=\(needed))"
+                    break
+                }
                 let sinOffset = offset + MemoryLayout<rt_msghdr>.stride
                 if sinOffset + MemoryLayout<sockaddr_in>.stride <= offset + msgLen {
                     let sin = base.load(fromByteOffset: sinOffset, as: sockaddr_in.self)
@@ -87,6 +97,8 @@ enum ARPDiscovery {
                         let sdl = base.load(fromByteOffset: sdlOffset, as: sockaddr_dl.self)
                         let nameLen = Int(sdl.sdl_nlen)
                         let macLen = Int(sdl.sdl_alen)
+                        if firstFewMacLens.count < 5 { firstFewMacLens.append(macLen) }
+                        if macLen != 6 { macLenMismatchCount += 1 }
                         if macLen == 6 {
                             // sdl_data starts at offset 8 in sockaddr_dl (sdl_len, sdl_family,
                             // sdl_index, sdl_type, sdl_nlen, sdl_alen, sdl_slen).
@@ -102,8 +114,10 @@ enum ARPDiscovery {
                 }
                 offset += msgLen
             }
-            return entries
+            return "iters=\(loopIterations) break=\(loopBreakReason) msgLens(first5)=\(firstFewMsgLens) macLens(first5)=\(firstFewMacLens) macMismatch=\(macLenMismatchCount) parsed=\(entries.count)"
         }
+        lastDiagnostic = "sysctl ok, bytes=\(needed); parse: \(diagnostic)"
+        return entries
     }
 
     static func findNintendoConsoles() -> [ARPEntry] {
