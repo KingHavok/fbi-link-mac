@@ -2,7 +2,7 @@
 
 A modern macOS app to push CIA files to [FBI](https://github.com/Steveice10/FBI) running on a Nintendo 3DS.
 
-Clean-sheet SwiftUI rewrite of [KingHavok/3DS-FBI-Link](https://github.com/KingHavok/3DS-FBI-Link). Same wire protocol so it works with stock FBI, but built on Network.framework + Swift 6 + SwiftUI.
+Clean-sheet SwiftUI rewrite of [smartperson/3DS-FBI-Link](https://github.com/smartperson/3DS-FBI-Link). Same wire protocol so it works with stock FBI, but built on Network.framework + Swift 6 + SwiftUI.
 
 ## Status
 
@@ -53,7 +53,7 @@ Preserved from the original for FBI compatibility:
 ## Credits
 
 - [Steveice10/FBI](https://github.com/Steveice10/FBI) — the tool this talks to.
-- [KingHavok/3DS-FBI-Link](https://github.com/KingHavok/3DS-FBI-Link) — prior Mac app whose wire protocol is preserved here.
+- [smartperson/3DS-FBI-Link](https://github.com/smartperson/3DS-FBI-Link) — prior Mac app whose wire protocol is preserved here.
 - [miltoncandelero/Boop](https://github.com/miltoncandelero/Boop) — auto-detection idea.
 
 ## License
