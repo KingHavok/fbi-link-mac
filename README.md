@@ -51,8 +51,9 @@ Preserved from the original for FBI compatibility:
 - [x] Prevent idle sleep while a transfer is in progress
 - [x] Subnet sweep before ARP read (one-click discover on a cold cache)
 - [x] App icon
-- [ ] Hardened Runtime + notarisation in CI (needs paid Apple Developer account)
-- [ ] App Sandbox opt-in
+- [x] Hardened Runtime
+- [x] App Sandbox opt-in
+- [ ] Notarisation in CI (needs paid Apple Developer account)
 
 ## Credits
 

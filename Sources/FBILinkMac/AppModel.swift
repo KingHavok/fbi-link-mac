@@ -20,6 +20,10 @@ final class AppModel {
     private var aggregateTracker = SpeedTracker()
     private var perFileTrackers: [TransferFile.ID: SpeedTracker] = [:]
     private let powerAssertion = PowerAssertion()
+    // Under App Sandbox, reading files granted via .fileImporter / drag-drop
+    // requires holding their security scope. We start the scope when the URL
+    // is added and rely on process exit to release it.
+    private var scopedURLs: [URL] = []
 
     init() {
         self.lanAddress = LANAddress.primaryIPv4()
@@ -28,6 +32,9 @@ final class AppModel {
     // MARK: - File input
 
     func addFiles(_ urls: [URL]) {
+        for url in urls where url.startAccessingSecurityScopedResource() {
+            scopedURLs.append(url)
+        }
         let expanded = expandDirectories(urls)
         for url in expanded {
             guard let file = TransferFile.fromLocal(url) else { continue }
