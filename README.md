@@ -49,7 +49,7 @@ Preserved from the original for FBI compatibility:
 - [x] Auto-discover 3DS on LAN (ARP + `NSLocalNetworkUsageDescription`)
 - [x] GitHub Actions release workflow (universal, ad-hoc signed)
 - [x] Prevent idle sleep while a transfer is in progress
-- [ ] Subnet ping sweep before ARP read (one-click discover on a cold cache)
+- [x] Subnet sweep before ARP read (one-click discover on a cold cache)
 - [ ] App icon
 - [ ] Hardened Runtime + notarisation in CI (needs paid Apple Developer account)
 - [ ] App Sandbox opt-in

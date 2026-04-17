@@ -213,6 +213,16 @@ final class AppModel {
     // MARK: - Discovery
 
     func discoverConsoles() {
+        Task { await performDiscovery() }
+    }
+
+    private func performDiscovery() async {
+        if let ip = lanAddress {
+            log("Scanning local subnet to warm ARP cache…")
+            await Task.detached(priority: .utility) {
+                await SubnetSweep.sweep(from: ip)
+            }.value
+        }
         let found = ARPDiscovery.findNintendoConsoles()
         let existing = Set(consoles.map(\.host))
         var added = 0
