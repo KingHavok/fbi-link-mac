@@ -1,0 +1,41 @@
+## macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+## Xcode user data
+xcuserdata/
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcshareddata/WorkspaceSettings.xcsettings
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+## Build output
+build/
+DerivedData/
+*.xcarchive
+.build/
+.swiftpm/
+
+## xcodegen output — regenerate from project.yml
+FBILinkMac.xcodeproj/
+
+## SwiftPM
+Package.resolved
+
+## Dependency managers (not used — kept for safety)
+Pods/
+Carthage/Build/
+
+## IDE
+.idea/
+.vscode/
+
+## Claude Code local state
+.claude/
