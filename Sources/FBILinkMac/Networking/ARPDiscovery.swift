@@ -33,6 +33,10 @@ enum ARPDiscovery {
         str.split(separator: ":").compactMap { UInt8($0, radix: 16) }
     })
 
+    /// Captured on each ``readARPTable()`` call so callers can surface the
+    /// root cause when the table comes back empty.
+    nonisolated(unsafe) static var lastDiagnostic: String = ""
+
     static func readARPTable() -> [ARPEntry] {
         var mib: [Int32] = [CTL_NET, PF_ROUTE, 0, AF_INET, NET_RT_FLAGS, RTF_LLINFO]
         let mibCount = u_int(mib.count)
@@ -40,7 +44,11 @@ enum ARPDiscovery {
         let sizeRC = mib.withUnsafeMutableBufferPointer { ptr in
             sysctl(ptr.baseAddress, mibCount, nil, &needed, nil, 0)
         }
-        guard sizeRC >= 0, needed > 0 else { return [] }
+        let sizeErr = errno
+        guard sizeRC >= 0, needed > 0 else {
+            lastDiagnostic = "sysctl(size) rc=\(sizeRC) errno=\(sizeErr) needed=\(needed)"
+            return []
+        }
 
         var buffer = [UInt8](repeating: 0, count: needed)
         let rc = buffer.withUnsafeMutableBufferPointer { bufPtr in
@@ -48,7 +56,12 @@ enum ARPDiscovery {
                 sysctl(mibPtr.baseAddress, mibCount, bufPtr.baseAddress, &needed, nil, 0)
             }
         }
-        guard rc >= 0 else { return [] }
+        let readErr = errno
+        guard rc >= 0 else {
+            lastDiagnostic = "sysctl(read) rc=\(rc) errno=\(readErr) bytes=\(needed)"
+            return []
+        }
+        lastDiagnostic = "sysctl ok, bytes=\(needed)"
 
         var entries: [ARPEntry] = []
         return buffer.withUnsafeBytes { raw -> [ARPEntry] in

@@ -231,6 +231,7 @@ final class AppModel {
             }.value
         }
         let table = ARPDiscovery.readARPTable()
+        log("ARP sysctl: \(ARPDiscovery.lastDiagnostic)")
         log("ARP table has \(table.count) entries.")
         for entry in table {
             log("  \(entry.ip) → \(entry.mac)")
