@@ -48,6 +48,7 @@ Preserved from the original for FBI compatibility:
 - [x] Drag-and-drop + `.fileImporter` for CIAs
 - [x] Auto-discover 3DS on LAN (ARP + `NSLocalNetworkUsageDescription`)
 - [x] GitHub Actions release workflow (universal, ad-hoc signed)
+- [x] Prevent idle sleep while a transfer is in progress
 - [ ] Subnet ping sweep before ARP read (one-click discover on a cold cache)
 - [ ] App icon
 - [ ] Hardened Runtime + notarisation in CI (needs paid Apple Developer account)

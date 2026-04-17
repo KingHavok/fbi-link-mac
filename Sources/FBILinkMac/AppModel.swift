@@ -19,6 +19,7 @@ final class AppModel {
     private var pumpTasks: [Task<Void, Never>] = []
     private var aggregateTracker = SpeedTracker()
     private var perFileTrackers: [TransferFile.ID: SpeedTracker] = [:]
+    private let powerAssertion = PowerAssertion()
 
     init() {
         self.lanAddress = LANAddress.primaryIPv4()
@@ -81,6 +82,7 @@ final class AppModel {
         guard !consoles.isEmpty else { log("Add a 3DS by IP first."); return }
 
         isServing = true
+        powerAssertion.acquire(reason: "FBILinkMac is transferring files to a 3DS")
         aggregateTracker.reset()
         perFileTrackers.removeAll()
         perFileStats.removeAll()
@@ -110,6 +112,7 @@ final class AppModel {
         }
         isServing = false
         serverPort = nil
+        powerAssertion.release()
     }
 
     // MARK: - Event pumps
