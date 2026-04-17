@@ -50,7 +50,7 @@ Preserved from the original for FBI compatibility:
 - [x] GitHub Actions release workflow (universal, ad-hoc signed)
 - [x] Prevent idle sleep while a transfer is in progress
 - [x] Subnet sweep before ARP read (one-click discover on a cold cache)
-- [ ] App icon
+- [x] App icon
 - [ ] Hardened Runtime + notarisation in CI (needs paid Apple Developer account)
 - [ ] App Sandbox opt-in
 
