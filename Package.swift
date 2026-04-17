@@ -12,9 +12,5 @@ let package = Package(
                 .enableUpcomingFeature("StrictConcurrency"),
             ]
         ),
-        .executableTarget(
-            name: "ARPDebug",
-            path: "Sources/ARPDebug"
-        ),
     ]
 )

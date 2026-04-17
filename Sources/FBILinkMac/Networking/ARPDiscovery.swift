@@ -33,10 +33,6 @@ enum ARPDiscovery {
         str.split(separator: ":").compactMap { UInt8($0, radix: 16) }
     })
 
-    /// Captured on each ``readARPTable()`` call so callers can surface the
-    /// root cause when the table comes back empty.
-    nonisolated(unsafe) static var lastDiagnostic: String = ""
-
     static func readARPTable() -> [ARPEntry] {
         var mib: [Int32] = [CTL_NET, PF_ROUTE, 0, AF_INET, NET_RT_FLAGS, RTF_LLINFO]
         let mibCount = u_int(mib.count)
@@ -44,11 +40,7 @@ enum ARPDiscovery {
         let sizeRC = mib.withUnsafeMutableBufferPointer { ptr in
             sysctl(ptr.baseAddress, mibCount, nil, &needed, nil, 0)
         }
-        let sizeErr = errno
-        guard sizeRC >= 0, needed > 0 else {
-            lastDiagnostic = "sysctl(size) rc=\(sizeRC) errno=\(sizeErr) needed=\(needed)"
-            return []
-        }
+        guard sizeRC >= 0, needed > 0 else { return [] }
 
         var buffer = [UInt8](repeating: 0, count: needed)
         let rc = buffer.withUnsafeMutableBufferPointer { bufPtr in
@@ -56,71 +48,52 @@ enum ARPDiscovery {
                 sysctl(mibPtr.baseAddress, mibCount, bufPtr.baseAddress, &needed, nil, 0)
             }
         }
-        let readErr = errno
-        guard rc >= 0 else {
-            lastDiagnostic = "sysctl(read) rc=\(rc) errno=\(readErr) bytes=\(needed)"
-            return []
-        }
-        lastDiagnostic = "sysctl ok, bytes=\(needed)"
+        guard rc >= 0 else { return [] }
 
         var entries: [ARPEntry] = []
-        var iters = 0
-        var sinRoomFails = 0
-        var sdlRoomFails = 0
-        var ipEmptyCount = 0
-        var firstSample = ""
-        let diagnostic = buffer.withUnsafeBytes { raw -> String in
-            guard let base = raw.baseAddress else { return "no base address" }
+        buffer.withUnsafeBytes { raw in
+            guard let base = raw.baseAddress else { return }
             var offset = 0
             while offset < needed {
-                iters += 1
                 let rtm = base.load(fromByteOffset: offset, as: rt_msghdr.self)
                 let msgLen = Int(rtm.rtm_msglen)
                 guard msgLen > 0, offset + msgLen <= needed else { break }
                 let sinOffset = offset + MemoryLayout<rt_msghdr>.stride
-                let sinStride = MemoryLayout<sockaddr_in>.stride
-                let sdlStride = MemoryLayout<sockaddr_dl>.stride
-                guard sinOffset + sinStride <= offset + msgLen else { sinRoomFails += 1; offset += msgLen; continue }
+                guard sinOffset + MemoryLayout<sockaddr_in>.stride <= offset + msgLen else {
+                    offset += msgLen; continue
+                }
                 let sin = base.load(fromByteOffset: sinOffset, as: sockaddr_in.self)
                 var addr = sin.sin_addr
                 var ipBuf = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
-                // Resolve the string inside the closure — the pointer returned by
-                // inet_ntop is into ipBuf's storage, which isn't guaranteed to
-                // stay alive after withUnsafeMutableBufferPointer returns.
+                // Keep the conversion inside the closure — the pointer returned by
+                // inet_ntop is into ipBuf's storage, invalid once the array goes out
+                // of scope. Pulling the String outside reads freed memory in Release.
                 let ip = ipBuf.withUnsafeMutableBufferPointer { ptr -> String in
                     guard let base = ptr.baseAddress,
                           inet_ntop(AF_INET, &addr, base, socklen_t(INET_ADDRSTRLEN)) != nil
                     else { return "" }
                     return String(cString: base)
                 }
-                let sinLen = Int(sin.sin_len)
-                let padded = (sinLen + 3) & ~3
+                let padded = (Int(sin.sin_len) + 3) & ~3
                 let sdlOffset = sinOffset + padded
-                let sdlFits = sdlOffset + sdlStride <= offset + msgLen
-                if !sdlFits { sdlRoomFails += 1 }
-                if ip.isEmpty { ipEmptyCount += 1 }
-                if iters == 1 {
-                    firstSample = "rtm_stride=\(MemoryLayout<rt_msghdr>.stride) sinOff=\(sinOffset) sin_family=\(sin.sin_family) sin_len=\(sinLen) ip=\(ip) sdlOff=\(sdlOffset) room=\(sdlFits) endOfMsg=\(offset + msgLen)"
+                guard sdlOffset + MemoryLayout<sockaddr_dl>.stride <= offset + msgLen, !ip.isEmpty else {
+                    offset += msgLen; continue
                 }
-                if sdlFits, !ip.isEmpty {
-                    let sdl = base.load(fromByteOffset: sdlOffset, as: sockaddr_dl.self)
-                    let nameLen = Int(sdl.sdl_nlen)
-                    let macLen = Int(sdl.sdl_alen)
-                    if macLen == 6 {
-                        let dataBase = sdlOffset + 8
-                        var macBytes = [UInt8](repeating: 0, count: 6)
-                        for i in 0..<6 {
-                            macBytes[i] = base.load(fromByteOffset: dataBase + nameLen + i, as: UInt8.self)
-                        }
-                        let mac = macBytes.map { String(format: "%02x", $0) }.joined(separator: ":")
-                        entries.append(ARPEntry(ip: ip, mac: mac))
+                let sdl = base.load(fromByteOffset: sdlOffset, as: sockaddr_dl.self)
+                if sdl.sdl_alen == 6 {
+                    // sdl_data starts at byte 8 of sockaddr_dl (after sdl_len,
+                    // sdl_family, sdl_index, sdl_type, sdl_nlen, sdl_alen, sdl_slen).
+                    let dataBase = sdlOffset + 8 + Int(sdl.sdl_nlen)
+                    var macBytes = [UInt8](repeating: 0, count: 6)
+                    for i in 0..<6 {
+                        macBytes[i] = base.load(fromByteOffset: dataBase + i, as: UInt8.self)
                     }
+                    let mac = macBytes.map { String(format: "%02x", $0) }.joined(separator: ":")
+                    entries.append(ARPEntry(ip: ip, mac: mac))
                 }
                 offset += msgLen
             }
-            return "iters=\(iters) sinRoomFails=\(sinRoomFails) sdlRoomFails=\(sdlRoomFails) ipEmpty=\(ipEmptyCount) parsed=\(entries.count) first=[\(firstSample)]"
         }
-        lastDiagnostic = "sysctl ok, bytes=\(needed); parse: \(diagnostic)"
         return entries
     }
 
