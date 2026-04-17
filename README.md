@@ -6,7 +6,7 @@ Clean-sheet SwiftUI rewrite of [smartperson/3DS-FBI-Link](https://github.com/sma
 
 ## Status
 
-**Early scaffold.** Protocol + file server + console sender are implemented. UI is minimal. See [Roadmap](#roadmap).
+**Early alpha.** End-to-end flow works: auto-discover or manually add a 3DS, pick CIAs or drop a folder, watch per-file and aggregate progress/speed/ETA in real time. Ad-hoc signed builds are published automatically on every push to `main` — see [Releases](https://github.com/KingHavok/fbi-link-mac/releases). See [Roadmap](#roadmap).
 
 ## Requirements
 
@@ -44,10 +44,13 @@ Preserved from the original for FBI compatibility:
 - [x] `NWListener`-based HTTP file server with streaming + progress callbacks
 - [x] `NWConnection`-based sender
 - [x] Manual console add by IP
-- [ ] Per-file progress bars + aggregate progress + transfer speed / ETA
-- [ ] Drag-and-drop + `.fileImporter` for CIAs
-- [ ] Auto-discover 3DS on LAN (ARP + `NSLocalNetworkUsageDescription`)
-- [ ] Hardened Runtime + notarisation in CI
+- [x] Per-file progress bars + aggregate progress + transfer speed / ETA
+- [x] Drag-and-drop + `.fileImporter` for CIAs
+- [x] Auto-discover 3DS on LAN (ARP + `NSLocalNetworkUsageDescription`)
+- [x] GitHub Actions release workflow (universal, ad-hoc signed)
+- [ ] Subnet ping sweep before ARP read (one-click discover on a cold cache)
+- [ ] App icon
+- [ ] Hardened Runtime + notarisation in CI (needs paid Apple Developer account)
 - [ ] App Sandbox opt-in
 
 ## Credits
