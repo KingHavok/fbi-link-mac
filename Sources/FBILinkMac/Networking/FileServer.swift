@@ -19,12 +19,18 @@ actor FileServer {
     private let queue = DispatchQueue(label: "FileServer")
     private var listener: NWListener?
     private var files: [String: TransferFile] = [:]   // keyed by servedPath
+    private var allowedHosts: Set<String> = []
+    private var activeConnections: [NWConnection] = []
     private let (stream, continuation) = AsyncStream<Event>.makeStream()
 
     var events: AsyncStream<Event> { stream }
 
     func setFiles(_ files: [TransferFile]) {
         self.files = files.reduce(into: [:]) { $0[$1.servedPath] = $1 }
+    }
+
+    func setAllowedHosts(_ hosts: Set<String>) {
+        self.allowedHosts = hosts
     }
 
     func start() throws -> UInt16 {
@@ -49,6 +55,8 @@ actor FileServer {
     func stop() {
         listener?.cancel()
         listener = nil
+        for conn in activeConnections { conn.cancel() }
+        activeConnections.removeAll()
         continuation.yield(.log("Server stopped."))
     }
 
@@ -74,8 +82,17 @@ actor FileServer {
     }
 
     private func accept(_ conn: NWConnection) async {
+        activeConnections.append(conn)
         let handler = RequestHandler(connection: conn, queue: queue, server: self)
         await handler.start()
+    }
+
+    fileprivate func isAllowed(host: String) -> Bool {
+        allowedHosts.isEmpty || allowedHosts.contains(host)
+    }
+
+    fileprivate func forget(_ conn: NWConnection) {
+        activeConnections.removeAll { $0 === conn }
     }
 
     fileprivate func lookup(path: String) -> TransferFile? {
@@ -137,11 +154,16 @@ private final class RequestHandler: @unchecked Sendable {
     private func teardown() {
         connection.stateUpdateHandler = nil
         connection.cancel()
+        let conn = connection
+        Task { [server] in await server?.forget(conn) }
     }
 
     private var clientHost: String {
         if case let .hostPort(host, _) = connection.endpoint {
-            return "\(host)"
+            // Strip the %interface zone identifier NWEndpoint sometimes appends
+            // so we can compare against plain IP strings from the user.
+            let raw = "\(host)"
+            return raw.split(separator: "%").first.map(String.init) ?? raw
         }
         return "unknown"
     }
@@ -188,6 +210,13 @@ private final class RequestHandler: @unchecked Sendable {
 
     private func route(decodedPath: String, rawPath: String) async {
         guard let server else { connection.cancel(); return }
+        let host = clientHost
+        let allowed = await server.isAllowed(host: host)
+        if !allowed {
+            await server.emit(.log("Denied request from \(host) (not in allowlist)."))
+            sendStatus(403, body: "Forbidden")
+            return
+        }
         if decodedPath == "/" || decodedPath.isEmpty {
             let html = await server.indexHTML()
             sendStatus(200, contentType: "text/html; charset=utf-8", body: html); return
@@ -195,7 +224,7 @@ private final class RequestHandler: @unchecked Sendable {
         var file = await server.lookup(path: rawPath)
         if file == nil { file = await server.lookup(path: decodedPath) }
         if let file, case .localFile(let url) = file.source {
-            await server.emit(.requestStarted(fileID: file.id, clientHost: clientHost))
+            await server.emit(.requestStarted(fileID: file.id, clientHost: host))
             streamFile(at: url, file: file); return
         }
         sendStatus(404, body: "Not found")

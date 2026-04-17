@@ -49,14 +49,20 @@ struct ContentView: View {
                 if model.isServing { model.stop() } else { model.start() }
             }
             .keyboardShortcut(.defaultAction)
-            .disabled(!model.isServing && (model.files.isEmpty || model.consoles.isEmpty))
+            .disabled(!model.isServing && (model.files.isEmpty || model.selectedConsole == nil))
+            .help(model.isServing
+                  ? "Stop the transfer and shut down the file server"
+                  : "Start the file server and tell the selected 3DS to fetch the queued files")
         }
         ToolbarItemGroup(placement: .secondaryAction) {
             Button { model.discoverConsoles() } label: { Label("Discover 3DS", systemImage: "sensor.tag.radiowaves.forward") }
-                .help("Scan ARP table for Nintendo MAC prefixes")
+                .help("Sweep the local subnet and scan the ARP table for Nintendo MAC prefixes")
             Button { showAddConsole = true } label: { Label("Add 3DS", systemImage: "plus.app") }
+                .help("Manually add a 3DS by IP address")
             Button { showAddURL = true } label: { Label("Add URL", systemImage: "link.badge.plus") }
+                .help("Queue a remote URL for the 3DS to download directly")
             Button { showFileImporter = true } label: { Label("Add Files", systemImage: "doc.badge.plus") }
+                .help("Pick CIA/TIK files or a folder to serve to the 3DS")
         }
     }
 }
@@ -106,7 +112,8 @@ private struct ConsoleSidebar: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        List {
+        @Bindable var bindable = model
+        List(selection: $bindable.selectedConsoleID) {
             Section("3DS Consoles") {
                 if model.consoles.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
@@ -117,6 +124,7 @@ private struct ConsoleSidebar: View {
                 } else {
                     ForEach(model.consoles) { console in
                         ConsoleRow(console: console)
+                            .tag(console.id)
                             .contextMenu {
                                 Button("Remove", role: .destructive) { model.removeConsole(console.id) }
                             }

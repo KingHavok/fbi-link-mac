@@ -6,6 +6,7 @@ import SwiftUI
 @Observable
 final class AppModel {
     var consoles: [Console] = []
+    var selectedConsoleID: Console.ID?
     var files: [TransferFile] = []
     var isServing = false
     var logLines: [String] = []
@@ -74,11 +75,21 @@ final class AppModel {
     // MARK: - Consoles
 
     func addConsole(host: String, port: UInt16 = 5000, name: String? = nil) {
-        consoles.append(Console(host: host, port: port, name: name))
+        let console = Console(host: host, port: port, name: name)
+        consoles.append(console)
+        if selectedConsoleID == nil { selectedConsoleID = console.id }
     }
 
     func removeConsole(_ id: Console.ID) {
         consoles.removeAll { $0.id == id }
+        if selectedConsoleID == id {
+            selectedConsoleID = consoles.first?.id
+        }
+    }
+
+    var selectedConsole: Console? {
+        guard let id = selectedConsoleID else { return nil }
+        return consoles.first { $0.id == id }
     }
 
     // MARK: - Serving
@@ -86,7 +97,7 @@ final class AppModel {
     func start() {
         guard !isServing else { return }
         guard !files.isEmpty else { log("Add a CIA or URL first."); return }
-        guard !consoles.isEmpty else { log("Add a 3DS by IP first."); return }
+        guard let target = selectedConsole else { log("Select a 3DS first."); return }
 
         isServing = true
         powerAssertion.acquire(reason: "FBILinkMac is transferring files to a 3DS")
@@ -99,9 +110,11 @@ final class AppModel {
         pumpTasks.removeAll()
 
         let filesSnapshot = files
+        let allowedHosts: Set<String> = [target.host]
         Task { @MainActor in
+            await server.setAllowedHosts(allowedHosts)
+            await server.setFiles(filesSnapshot)
             do {
-                try await server.setFiles(filesSnapshot)
                 _ = try await server.start()
             } catch {
                 log("Server start failed: \(error.localizedDescription)")
@@ -230,13 +243,7 @@ final class AppModel {
                 await SubnetSweep.sweep(from: ip)
             }.value
         }
-        let table = ARPDiscovery.readARPTable()
-        log("ARP sysctl: \(ARPDiscovery.lastDiagnostic)")
-        log("ARP table has \(table.count) entries.")
-        for entry in table {
-            log("  \(entry.ip) → \(entry.mac)")
-        }
-        let found = table.filter { ARPDiscovery.nintendoPrefixes.contains($0.macPrefix) }
+        let found = ARPDiscovery.findNintendoConsoles()
         let existing = Set(consoles.map(\.host))
         var added = 0
         for entry in found where !existing.contains(entry.ip) {
@@ -245,7 +252,7 @@ final class AppModel {
             added += 1
         }
         if found.isEmpty {
-            log("No Nintendo MAC prefixes matched. Check the dump above for your 3DS's MAC.")
+            log("No 3DS found in ARP table. Open FBI's Receive URLs screen on your 3DS and try again.")
         } else if added == 0 {
             log("Auto-discovery found \(found.count) 3DS, all already in your console list.")
         }
@@ -254,6 +261,10 @@ final class AppModel {
     private func dispatchConsoles(port: UInt16) async {
         guard let hostIP = lanAddress else {
             log("Could not determine this Mac's LAN address.")
+            stop(); return
+        }
+        guard let target = selectedConsole else {
+            log("No 3DS selected.")
             stop(); return
         }
         let urls: [URL] = files.compactMap { file in
@@ -265,19 +276,15 @@ final class AppModel {
                 return url
             }
         }
-        for console in consoles {
-            await sender.send(to: console, urls: urls)
-        }
+        await sender.send(to: target, urls: urls)
     }
 
     private func checkAllDone() {
-        let unfinished = consoles.contains { console in
-            switch console.status {
-            case .idle, .connecting, .sending: return true
-            case .completed, .failed: return false
-            }
+        guard let target = selectedConsole else { stop(); return }
+        switch target.status {
+        case .idle, .connecting, .sending: return
+        case .completed, .failed: stop()
         }
-        if !unfinished { stop() }
     }
 
     func log(_ message: String) {
