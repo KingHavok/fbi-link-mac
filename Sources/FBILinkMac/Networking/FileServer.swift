@@ -101,7 +101,10 @@ actor FileServer {
 
 // MARK: - Connection handling
 
-private final class RequestHandler {
+/// Per-request handler. All mutable state is touched exclusively on the shared
+/// server `DispatchQueue`, so we can mark the class `@unchecked Sendable` to let
+/// Network.framework's `@Sendable` callbacks capture `self` under strict concurrency.
+private final class RequestHandler: @unchecked Sendable {
     private let connection: NWConnection
     private let queue: DispatchQueue
     private weak var server: FileServer?
@@ -179,11 +182,11 @@ private final class RequestHandler {
             let html = await server.indexHTML()
             sendStatus(200, contentType: "text/html; charset=utf-8", body: html); return
         }
-        if let file = await server.lookup(path: rawPath) ?? server.lookup(path: decodedPath) {
-            if case .localFile(let url) = file.source {
-                await server.emit(.requestStarted(fileID: file.id, clientHost: clientHost))
-                streamFile(at: url, file: file); return
-            }
+        var file = await server.lookup(path: rawPath)
+        if file == nil { file = await server.lookup(path: decodedPath) }
+        if let file, case .localFile(let url) = file.source {
+            await server.emit(.requestStarted(fileID: file.id, clientHost: clientHost))
+            streamFile(at: url, file: file); return
         }
         sendStatus(404, body: "Not found")
     }

@@ -11,10 +11,14 @@ final class AppModel {
     var logLines: [String] = []
     var serverPort: UInt16?
     var lanAddress: String?
+    var aggregateStats: TransferStats = .zero
+    var perFileStats: [TransferFile.ID: TransferStats] = [:]
 
     private let server = FileServer()
     private let sender = ConsoleSender()
     private var pumpTasks: [Task<Void, Never>] = []
+    private var aggregateTracker = SpeedTracker()
+    private var perFileTrackers: [TransferFile.ID: SpeedTracker] = [:]
 
     init() {
         self.lanAddress = LANAddress.primaryIPv4()
@@ -77,6 +81,11 @@ final class AppModel {
         guard !consoles.isEmpty else { log("Add a 3DS by IP first."); return }
 
         isServing = true
+        aggregateTracker.reset()
+        perFileTrackers.removeAll()
+        perFileStats.removeAll()
+        aggregateStats = .zero
+        for idx in files.indices { files[idx].bytesSent = 0 }
         pumpTasks.forEach { $0.cancel() }
         pumpTasks.removeAll()
 
@@ -120,10 +129,12 @@ final class AppModel {
                     files[idx].bytesSent = sent
                     if files[idx].byteCount == 0 { files[idx].byteCount = total }
                 }
+                updateStats(fileID: id, bytesSent: sent, total: total)
             case .requestFinished(let id):
                 if let f = files.first(where: { $0.id == id }) {
                     log("Finished serving \(f.displayName).")
                 }
+                markFileFinished(id)
             case .log(let message):
                 log(message)
             case .error(let message):
@@ -156,6 +167,62 @@ final class AppModel {
     private func updateConsole(_ id: Console.ID, _ mutate: (inout Console) -> Void) {
         guard let idx = consoles.firstIndex(where: { $0.id == id }) else { return }
         mutate(&consoles[idx])
+    }
+
+    // MARK: - Stats
+
+    private func updateStats(fileID: TransferFile.ID, bytesSent: Int64, total: Int64) {
+        var tracker = perFileTrackers[fileID] ?? SpeedTracker()
+        tracker.record(totalBytes: bytesSent)
+        perFileTrackers[fileID] = tracker
+        perFileStats[fileID] = TransferStats(
+            bytesSent: bytesSent,
+            totalBytes: total,
+            bytesPerSecond: tracker.bytesPerSecond,
+            isActive: bytesSent < total
+        )
+        recomputeAggregate()
+    }
+
+    private func markFileFinished(_ id: TransferFile.ID) {
+        if var stats = perFileStats[id] {
+            stats.isActive = false
+            stats.bytesPerSecond = 0
+            perFileStats[id] = stats
+        }
+        perFileTrackers[id]?.reset()
+        recomputeAggregate()
+    }
+
+    private func recomputeAggregate() {
+        let totalSent = files.reduce(Int64(0)) { $0 + $1.bytesSent }
+        let totalBytes = files.reduce(Int64(0)) { $0 + max($1.byteCount, $1.bytesSent) }
+        aggregateTracker.record(totalBytes: totalSent)
+        let anyActive = perFileStats.values.contains { $0.isActive }
+        aggregateStats = TransferStats(
+            bytesSent: totalSent,
+            totalBytes: totalBytes,
+            bytesPerSecond: anyActive ? aggregateTracker.bytesPerSecond : 0,
+            isActive: anyActive
+        )
+    }
+
+    // MARK: - Discovery
+
+    func discoverConsoles() {
+        let found = ARPDiscovery.findNintendoConsoles()
+        let existing = Set(consoles.map(\.host))
+        var added = 0
+        for entry in found where !existing.contains(entry.ip) {
+            addConsole(host: entry.ip, name: "3DS at \(entry.ip)")
+            log("Auto-detected 3DS at \(entry.ip) (MAC \(entry.mac)).")
+            added += 1
+        }
+        if found.isEmpty {
+            log("No 3DS found in ARP table. Open FBI's Receive URLs screen on your 3DS and try again.")
+        } else if added == 0 {
+            log("Auto-discovery found \(found.count) 3DS, all already in your console list.")
+        }
     }
 
     private func dispatchConsoles(port: UInt16) async {
