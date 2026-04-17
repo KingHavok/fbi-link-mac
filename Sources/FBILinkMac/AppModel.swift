@@ -230,7 +230,12 @@ final class AppModel {
                 await SubnetSweep.sweep(from: ip)
             }.value
         }
-        let found = ARPDiscovery.findNintendoConsoles()
+        let table = ARPDiscovery.readARPTable()
+        log("ARP table has \(table.count) entries.")
+        for entry in table {
+            log("  \(entry.ip) → \(entry.mac)")
+        }
+        let found = table.filter { ARPDiscovery.nintendoPrefixes.contains($0.macPrefix) }
         let existing = Set(consoles.map(\.host))
         var added = 0
         for entry in found where !existing.contains(entry.ip) {
@@ -239,7 +244,7 @@ final class AppModel {
             added += 1
         }
         if found.isEmpty {
-            log("No 3DS found in ARP table. Open FBI's Receive URLs screen on your 3DS and try again.")
+            log("No Nintendo MAC prefixes matched. Check the dump above for your 3DS's MAC.")
         } else if added == 0 {
             log("Auto-discovery found \(found.count) 3DS, all already in your console list.")
         }
