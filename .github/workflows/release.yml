@@ -84,7 +84,13 @@ jobs:
 
             > **Note:** this build is ad-hoc signed, not notarised. macOS will block it on first launch.
             >
-            > To run it, either right-click the app and choose **Open** (then click Open in the prompt), or run:
+            > **To run it (macOS Sequoia / Sonoma):**
+            > 1. Double-click the app. A dialog will say it can't be opened — click **Done** (don't click *Move to Bin*).
+            > 2. Open **System Settings → Privacy & Security** and scroll to the bottom.
+            > 3. Next to "FBILinkMac was blocked…" click **Open Anyway** and authenticate.
+            > 4. Re-launch the app; the next confirmation sticks.
+            >
+            > Or strip the quarantine attribute from the Terminal:
             > ```sh
             > xattr -dr com.apple.quarantine /Applications/FBILinkMac.app
             > ```
