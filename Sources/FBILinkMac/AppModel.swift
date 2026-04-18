@@ -180,6 +180,7 @@ final class AppModel {
             switch event {
             case .connecting(let id):
                 updateConsole(id) { $0.status = .connecting }
+                if let c = consoles.first(where: { $0.id == id }) { log("Connecting to \(c.displayName) at \(c.host):\(c.port)…") }
             case .connected(let id):
                 updateConsole(id) { $0.status = .sending }
                 if let c = consoles.first(where: { $0.id == id }) { log("Connected to \(c.displayName).") }
@@ -191,6 +192,10 @@ final class AppModel {
                 updateConsole(id) { $0.status = .failed(message) }
                 log("Send to console failed: \(message)")
                 checkAllDone()
+            case .waiting(let id, let message):
+                if let c = consoles.first(where: { $0.id == id }) {
+                    log("Waiting to reach \(c.displayName) at \(c.host):\(c.port) — \(message). Check that FBI's Receive URLs screen is open and that this app has Local Network permission (System Settings → Privacy & Security).")
+                }
             }
         }
     }
@@ -287,6 +292,7 @@ final class AppModel {
                 return url
             }
         }
+        log("Dispatching \(urls.count) URL(s) to \(target.displayName) at \(target.host):\(target.port)…")
         await sender.send(to: target, urls: urls)
     }
 

@@ -9,6 +9,7 @@ actor ConsoleSender {
         case connected(consoleID: UUID)
         case finished(consoleID: UUID)
         case failed(consoleID: UUID, message: String)
+        case waiting(consoleID: UUID, message: String)
     }
 
     private let queue = DispatchQueue(label: "ConsoleSender")
@@ -62,6 +63,8 @@ actor ConsoleSender {
             continuation.yield(.failed(consoleID: console.id, message: err.localizedDescription))
             connection.cancel()
             connections[console.id] = nil
+        case .waiting(let err):
+            continuation.yield(.waiting(consoleID: console.id, message: err.localizedDescription))
         case .cancelled:
             connections[console.id] = nil
         default:
