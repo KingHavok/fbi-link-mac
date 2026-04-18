@@ -267,17 +267,26 @@ private struct FileProgressCell: View {
     let file: TransferFile
 
     var body: some View {
-        let stats = model.perFileStats[file.id]
-        VStack(alignment: .leading, spacing: 2) {
-            if file.byteCount > 0 {
-                ProgressView(value: file.progress)
-            } else {
-                ProgressView().controlSize(.small)
-            }
-            if let stats, stats.isActive, stats.bytesPerSecond > 0 {
-                Text(rowFooter(stats))
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
+        if !file.isLocal {
+            Text("Fetched by 3DS — progress not tracked")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .help("The 3DS downloads this URL directly from the remote host, so the Mac can't see byte-level progress.")
+        } else {
+            let stats = model.perFileStats[file.id]
+            VStack(alignment: .leading, spacing: 2) {
+                if file.byteCount > 0 {
+                    ProgressView(value: file.progress)
+                } else {
+                    ProgressView().controlSize(.small)
+                }
+                if let stats, stats.isActive, stats.bytesPerSecond > 0 {
+                    Text(rowFooter(stats))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }
