@@ -144,10 +144,25 @@ final class AppModel {
             await server.stop()
             await sender.cancelAll()
         }
-        if let id = activeConsoleID, var stats = perConsoleStats[id] {
+        if let id = activeConsoleID {
+            updateConsole(id) { c in
+                switch c.status {
+                case .connecting, .sending, .idle:
+                    c.status = .failed("Stopped")
+                case .completed, .failed:
+                    break
+                }
+            }
+            if var stats = perConsoleStats[id] {
+                stats.isActive = false
+                stats.bytesPerSecond = 0
+                perConsoleStats[id] = stats
+            }
+        }
+        for (fileID, var stats) in perFileStats where stats.isActive {
             stats.isActive = false
             stats.bytesPerSecond = 0
-            perConsoleStats[id] = stats
+            perFileStats[fileID] = stats
         }
         activeConsoleID = nil
         isServing = false

@@ -166,6 +166,7 @@ private struct ConsoleRow: View {
                 if let stats, stats.totalBytes > 0 {
                     ProgressView(value: stats.progress)
                         .progressViewStyle(.linear)
+                        .tint(progressTint)
                     Text(progressFooter(stats))
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(.secondary)
@@ -220,6 +221,14 @@ private struct ConsoleRow: View {
         case .failed: .red
         case .sending, .connecting: .accentColor
         case .idle: .secondary
+        }
+    }
+
+    private var progressTint: Color {
+        switch console.status {
+        case .failed: .red
+        case .completed: .green
+        case .sending, .connecting, .idle: .accentColor
         }
     }
 }
@@ -279,6 +288,7 @@ private struct FileProgressCell: View {
             VStack(alignment: .leading, spacing: 2) {
                 if file.byteCount > 0 {
                     ProgressView(value: file.progress)
+                        .tint(tint(for: stats, file: file))
                 } else {
                     ProgressView().controlSize(.small)
                 }
@@ -286,9 +296,21 @@ private struct FileProgressCell: View {
                     Text(rowFooter(stats))
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
+                } else if let stats, !stats.isActive, stats.bytesSent > 0, file.progress < 1.0 {
+                    Text("Interrupted at \(TransferFormat.bytes(stats.bytesSent))")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.red)
                 }
             }
         }
+    }
+
+    private func tint(for stats: TransferStats?, file: TransferFile) -> Color {
+        guard let stats else { return .accentColor }
+        if stats.isActive { return .accentColor }
+        if file.progress >= 1.0 { return .green }
+        if stats.bytesSent > 0 { return .red }
+        return .accentColor
     }
 
     private func rowFooter(_ s: TransferStats) -> String {
