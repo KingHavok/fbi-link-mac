@@ -50,7 +50,7 @@ struct ContentView: View {
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
             Button { model.discoverConsoles() } label: { Label("Discover 3DS", systemImage: "sensor.tag.radiowaves.forward") }
-                .help("Sweep the local subnet and scan the ARP table for Nintendo MAC prefixes")
+                .help("Look for 3DS consoles on your local network")
             Button { showAddConsole = true } label: { Label("Add 3DS", systemImage: "plus.app") }
                 .help("Manually add a 3DS by IP address")
             Button { showAddURL = true } label: { Label("Add URL", systemImage: "link.badge.plus") }
