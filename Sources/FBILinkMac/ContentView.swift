@@ -306,10 +306,10 @@ private struct FileProgressCell: View {
     }
 
     private func tint(for stats: TransferStats?, file: TransferFile) -> Color {
-        guard let stats else { return .accentColor }
-        if stats.isActive { return .accentColor }
         if file.progress >= 1.0 { return .green }
-        if stats.bytesSent > 0 { return .red }
+        if let stats, stats.isActive { return .accentColor }
+        if case .failed = model.selectedConsole?.status { return .red }
+        if let stats, stats.bytesSent > 0 { return .red }
         return .accentColor
     }
 
