@@ -17,10 +17,16 @@ final class AppModel {
 
     private let server = FileServer()
     private let sender = ConsoleSender()
+    // Pump tasks are started once in init and live for the app's lifetime.
+    // AsyncStream is single-consumer — restarting the loops per transfer
+    // breaks event delivery on the second Send.
     private var pumpTasks: [Task<Void, Never>] = []
     private var activeConsoleID: Console.ID?
     private var perConsoleTrackers: [Console.ID: SpeedTracker] = [:]
     private var perFileTrackers: [TransferFile.ID: SpeedTracker] = [:]
+    // Files for which FBI actually issued an HTTP GET. Empty after a
+    // sender.finished means FBI dismissed the prompt without downloading.
+    private var servedFileIDs: Set<TransferFile.ID> = []
     private let powerAssertion = PowerAssertion()
     // Under App Sandbox, reading files granted via .fileImporter / drag-drop
     // requires holding their security scope. We start the scope when the URL
@@ -29,6 +35,14 @@ final class AppModel {
 
     init() {
         self.lanAddress = LANAddress.primaryIPv4()
+        pumpTasks.append(Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.pumpServerEvents()
+        })
+        pumpTasks.append(Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.pumpSenderEvents()
+        })
     }
 
     // MARK: - File input
@@ -107,9 +121,9 @@ final class AppModel {
         perFileStats.removeAll()
         perConsoleTrackers.removeValue(forKey: target.id)
         perConsoleStats.removeValue(forKey: target.id)
+        servedFileIDs.removeAll()
+        updateConsole(target.id) { $0.status = .idle }
         for idx in files.indices { files[idx].bytesSent = 0 }
-        pumpTasks.forEach { $0.cancel() }
-        pumpTasks.removeAll()
 
         let filesSnapshot = files
         let allowedHosts: Set<String> = [target.host]
@@ -123,8 +137,6 @@ final class AppModel {
                 isServing = false
             }
         }
-        pumpTasks.append(Task { @MainActor in await self.pumpServerEvents() })
-        pumpTasks.append(Task { @MainActor in await self.pumpSenderEvents() })
     }
 
     func stop() {
@@ -153,7 +165,8 @@ final class AppModel {
                 serverPort = port
                 log("Server listening on port \(port).")
                 await dispatchConsoles(port: port)
-            case .requestStarted(_, let host):
+            case .requestStarted(let fileID, let host):
+                servedFileIDs.insert(fileID)
                 log("Serving request from \(host).")
             case .progress(let id, let sent, let total):
                 if let idx = files.firstIndex(where: { $0.id == id }) {
@@ -185,8 +198,19 @@ final class AppModel {
                 updateConsole(id) { $0.status = .sending }
                 if let c = consoles.first(where: { $0.id == id }) { log("Connected to \(c.displayName).") }
             case .finished(let id):
-                updateConsole(id) { $0.status = .completed }
-                if let c = consoles.first(where: { $0.id == id }) { log("\(c.displayName) finished installing.") }
+                let hasAnyRemote = files.contains { !$0.isLocal }
+                let declined = servedFileIDs.isEmpty && !hasAnyRemote
+                if declined {
+                    updateConsole(id) { $0.status = .failed("Declined on 3DS") }
+                    if let c = consoles.first(where: { $0.id == id }) {
+                        log("\(c.displayName) dismissed the prompt — no files were installed.")
+                    }
+                } else {
+                    updateConsole(id) { $0.status = .completed }
+                    if let c = consoles.first(where: { $0.id == id }) {
+                        log("\(c.displayName) finished installing.")
+                    }
+                }
                 checkAllDone()
             case .failed(let id, let message):
                 updateConsole(id) { $0.status = .failed(message) }
