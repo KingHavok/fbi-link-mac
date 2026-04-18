@@ -1,11 +1,15 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
 struct ContentView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.openURL) private var openURL
     @State private var showAddConsole = false
     @State private var showAddURL = false
     @State private var showFileImporter = false
+
+    private static let projectURL = URL(string: "https://github.com/KingHavok/fbi-link-mac")!
 
     var body: some View {
         NavigationSplitView {
@@ -13,7 +17,7 @@ struct ContentView: View {
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260)
         } detail: {
             VStack(spacing: 0) {
-                AggregateBanner()
+                TargetBar()
                 Divider()
                 FileList()
                 Divider()
@@ -44,17 +48,7 @@ struct ContentView: View {
     }
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
-        ToolbarItem(placement: .primaryAction) {
-            Button(model.isServing ? "Stop" : "Send") {
-                if model.isServing { model.stop() } else { model.start() }
-            }
-            .keyboardShortcut(.defaultAction)
-            .disabled(!model.isServing && (model.files.isEmpty || model.selectedConsole == nil))
-            .help(model.isServing
-                  ? "Stop the transfer and shut down the file server"
-                  : "Start the file server and tell the selected 3DS to fetch the queued files")
-        }
-        ToolbarItemGroup(placement: .secondaryAction) {
+        ToolbarItemGroup(placement: .primaryAction) {
             Button { model.discoverConsoles() } label: { Label("Discover 3DS", systemImage: "sensor.tag.radiowaves.forward") }
                 .help("Sweep the local subnet and scan the ARP table for Nintendo MAC prefixes")
             Button { showAddConsole = true } label: { Label("Add 3DS", systemImage: "plus.app") }
@@ -63,46 +57,56 @@ struct ContentView: View {
                 .help("Queue a remote URL for the 3DS to download directly")
             Button { showFileImporter = true } label: { Label("Add Files", systemImage: "doc.badge.plus") }
                 .help("Pick CIA/TIK files or a folder to serve to the 3DS")
+            Spacer()
+            Button { openURL(ContentView.projectURL) } label: { Label("Project on GitHub", systemImage: "chevron.left.forwardslash.chevron.right") }
+                .help("Open the FBILinkMac project page on GitHub to file bugs or check for updates")
         }
     }
 }
 
-// MARK: - Aggregate banner
+// MARK: - Target bar
 
-private struct AggregateBanner: View {
+private struct TargetBar: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        let stats = model.aggregateStats
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 12) {
-                ProgressView(value: stats.progress) {
-                    Text(headline(stats))
-                        .font(.callout)
+        @Bindable var bindable = model
+        HStack(spacing: 12) {
+            if model.consoles.isEmpty {
+                Text("Add a 3DS to begin")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            } else {
+                Picker("Sending to:", selection: $bindable.selectedConsoleID) {
+                    ForEach(model.consoles) { console in
+                        Text(console.displayName).tag(Optional(console.id))
+                    }
                 }
-                .progressViewStyle(.linear)
-                if stats.isActive {
-                    Text(rateAndETA(stats))
-                        .font(.callout.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
+                .pickerStyle(.menu)
+                .fixedSize()
+                .disabled(model.isServing)
+                .help(model.isServing
+                      ? "Stop the current transfer before switching 3DS"
+                      : "Pick which 3DS receives the queued files")
+            }
+            Spacer()
+            if !model.files.isEmpty {
+                Text(fileSummary)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.vertical, 8)
         .background(.background.secondary)
     }
 
-    private func headline(_ s: TransferStats) -> String {
-        guard s.totalBytes > 0 else { return "Idle — add a 3DS and CIA files to begin" }
-        let pct = Int((s.progress * 100).rounded())
-        return "\(TransferFormat.bytes(s.bytesSent)) of \(TransferFormat.bytes(s.totalBytes)) (\(pct)%)"
-    }
-
-    private func rateAndETA(_ s: TransferStats) -> String {
-        var bits: [String] = [TransferFormat.rate(s.bytesPerSecond)]
-        if let eta = s.etaSeconds { bits.append("ETA \(TransferFormat.duration(eta))") }
-        return bits.joined(separator: " · ")
+    private var fileSummary: String {
+        let count = model.files.count
+        let total = model.files.reduce(Int64(0)) { $0 + max($1.byteCount, $1.bytesSent) }
+        let noun = count == 1 ? "file" : "files"
+        guard total > 0 else { return "\(count) \(noun) queued" }
+        return "\(count) \(noun) · \(TransferFormat.bytes(total))"
     }
 }
 
@@ -123,7 +127,7 @@ private struct ConsoleSidebar: View {
                     }
                 } else {
                     ForEach(model.consoles) { console in
-                        ConsoleRow(console: console)
+                        ConsoleRow(console: console, isSelected: console.id == model.selectedConsoleID)
                             .tag(console.id)
                             .contextMenu {
                                 Button("Remove", role: .destructive) { model.removeConsole(console.id) }
@@ -146,17 +150,49 @@ private struct ConsoleSidebar: View {
 }
 
 private struct ConsoleRow: View {
+    @Environment(AppModel.self) private var model
     let console: Console
+    let isSelected: Bool
 
     var body: some View {
-        HStack {
+        let stats = model.perConsoleStats[console.id]
+        HStack(alignment: .top, spacing: 8) {
             Image(systemName: symbol)
                 .foregroundStyle(color)
-            VStack(alignment: .leading) {
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 2) {
                 Text(console.displayName).font(.body)
                 Text(statusLabel).font(.caption).foregroundStyle(.secondary)
+                if let stats, stats.totalBytes > 0 {
+                    ProgressView(value: stats.progress)
+                        .progressViewStyle(.linear)
+                    Text(progressFooter(stats))
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            if isSelected {
+                Button(model.isServing ? "Stop" : "Send") {
+                    if model.isServing { model.stop() } else { model.start() }
+                }
+                .controlSize(.small)
+                .keyboardShortcut(.defaultAction)
+                .disabled(!model.isServing && model.files.isEmpty)
+                .help(model.isServing
+                      ? "Stop the transfer and shut down the file server"
+                      : "Start the file server and tell this 3DS to fetch the queued files")
             }
         }
+    }
+
+    private func progressFooter(_ s: TransferStats) -> String {
+        let pct = Int((s.progress * 100).rounded())
+        let size = "\(TransferFormat.bytes(s.bytesSent)) of \(TransferFormat.bytes(s.totalBytes)) (\(pct)%)"
+        guard s.isActive, s.bytesPerSecond > 0 else { return size }
+        var extras: [String] = [TransferFormat.rate(s.bytesPerSecond)]
+        if let eta = s.etaSeconds { extras.append("ETA \(TransferFormat.duration(eta))") }
+        return size + " · " + extras.joined(separator: " · ")
     }
 
     private var statusLabel: String {
@@ -277,18 +313,32 @@ private struct LogPane: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
-                    ForEach(Array(model.logLines.enumerated()), id: \.offset) { idx, line in
+                    ForEach(Array(model.logLines.enumerated().reversed()), id: \.offset) { idx, line in
                         Text(line).font(.system(.caption, design: .monospaced)).id(idx)
                     }
                 }
                 .padding(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
             }
             .onChange(of: model.logLines.count) { _, new in
-                proxy.scrollTo(new - 1, anchor: .bottom)
+                guard new > 0 else { return }
+                proxy.scrollTo(new - 1, anchor: .top)
             }
         }
         .background(.background.secondary)
+        .contextMenu {
+            Button("Copy All") { copyAll() }
+                .disabled(model.logLines.isEmpty)
+            Button("Clear") { model.logLines.removeAll() }
+                .disabled(model.logLines.isEmpty)
+        }
+    }
+
+    private func copyAll() {
+        let text = model.logLines.joined(separator: "\n")
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 }
 

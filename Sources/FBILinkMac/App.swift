@@ -2,6 +2,7 @@ import SwiftUI
 
 @main
 struct FBILinkMacApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var model = AppModel()
 
     var body: some Scene {
@@ -9,6 +10,7 @@ struct FBILinkMacApp: App {
             ContentView()
                 .environment(model)
                 .frame(minWidth: 640, minHeight: 420)
+                .onAppear { AppDelegate.model = model }
                 .onOpenURL { url in
                     if url.isFileURL {
                         model.addFiles([url])

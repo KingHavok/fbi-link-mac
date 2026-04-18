@@ -12,13 +12,14 @@ final class AppModel {
     var logLines: [String] = []
     var serverPort: UInt16?
     var lanAddress: String?
-    var aggregateStats: TransferStats = .zero
+    var perConsoleStats: [Console.ID: TransferStats] = [:]
     var perFileStats: [TransferFile.ID: TransferStats] = [:]
 
     private let server = FileServer()
     private let sender = ConsoleSender()
     private var pumpTasks: [Task<Void, Never>] = []
-    private var aggregateTracker = SpeedTracker()
+    private var activeConsoleID: Console.ID?
+    private var perConsoleTrackers: [Console.ID: SpeedTracker] = [:]
     private var perFileTrackers: [TransferFile.ID: SpeedTracker] = [:]
     private let powerAssertion = PowerAssertion()
     // Under App Sandbox, reading files granted via .fileImporter / drag-drop
@@ -100,11 +101,12 @@ final class AppModel {
         guard let target = selectedConsole else { log("Select a 3DS first."); return }
 
         isServing = true
+        activeConsoleID = target.id
         powerAssertion.acquire(reason: "FBILinkMac is transferring files to a 3DS")
-        aggregateTracker.reset()
         perFileTrackers.removeAll()
         perFileStats.removeAll()
-        aggregateStats = .zero
+        perConsoleTrackers.removeValue(forKey: target.id)
+        perConsoleStats.removeValue(forKey: target.id)
         for idx in files.indices { files[idx].bytesSent = 0 }
         pumpTasks.forEach { $0.cancel() }
         pumpTasks.removeAll()
@@ -130,6 +132,12 @@ final class AppModel {
             await server.stop()
             await sender.cancelAll()
         }
+        if let id = activeConsoleID, var stats = perConsoleStats[id] {
+            stats.isActive = false
+            stats.bytesPerSecond = 0
+            perConsoleStats[id] = stats
+        }
+        activeConsoleID = nil
         isServing = false
         serverPort = nil
         powerAssertion.release()
@@ -204,7 +212,7 @@ final class AppModel {
             bytesPerSecond: tracker.bytesPerSecond,
             isActive: bytesSent < total
         )
-        recomputeAggregate()
+        recomputeConsoleStats()
     }
 
     private func markFileFinished(_ id: TransferFile.ID) {
@@ -214,18 +222,21 @@ final class AppModel {
             perFileStats[id] = stats
         }
         perFileTrackers[id]?.reset()
-        recomputeAggregate()
+        recomputeConsoleStats()
     }
 
-    private func recomputeAggregate() {
+    private func recomputeConsoleStats() {
+        guard let id = activeConsoleID else { return }
         let totalSent = files.reduce(Int64(0)) { $0 + $1.bytesSent }
         let totalBytes = files.reduce(Int64(0)) { $0 + max($1.byteCount, $1.bytesSent) }
-        aggregateTracker.record(totalBytes: totalSent)
+        var tracker = perConsoleTrackers[id] ?? SpeedTracker()
+        tracker.record(totalBytes: totalSent)
+        perConsoleTrackers[id] = tracker
         let anyActive = perFileStats.values.contains { $0.isActive }
-        aggregateStats = TransferStats(
+        perConsoleStats[id] = TransferStats(
             bytesSent: totalSent,
             totalBytes: totalBytes,
-            bytesPerSecond: anyActive ? aggregateTracker.bytesPerSecond : 0,
+            bytesPerSecond: anyActive ? tracker.bytesPerSecond : 0,
             isActive: anyActive
         )
     }
