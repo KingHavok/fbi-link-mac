@@ -2,7 +2,7 @@
 
 A native Mac app for installing CIA/TIK files onto a Nintendo 3DS running [FBI](https://github.com/Steveice10/FBI) — a modern replacement for the old [3DS-FBI-Link](https://github.com/smartperson/3DS-FBI-Link) that still uses FBI's original wire protocol but is built from scratch for current macOS.
 
-![FBI Link screenshot](docs/screenshot.png)
+![FBI Link screenshot](/FBI_Link_V1_Screenshot.png)
 
 ## What you can do with it
 
