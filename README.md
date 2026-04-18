@@ -1,65 +1,73 @@
-# fbi-link-mac
+# FBI Link
 
-A modern macOS app to push CIA files to [FBI](https://github.com/Steveice10/FBI) running on a Nintendo 3DS.
+A native Mac app for installing CIA/TIK files onto a Nintendo 3DS running [FBI](https://github.com/Steveice10/FBI) — a modern replacement for the old [3DS-FBI-Link](https://github.com/smartperson/3DS-FBI-Link) that still uses FBI's original wire protocol but is built from scratch for current macOS.
 
-Clean-sheet SwiftUI rewrite of [smartperson/3DS-FBI-Link](https://github.com/smartperson/3DS-FBI-Link). Same wire protocol so it works with stock FBI, but built on Network.framework + Swift 6 + SwiftUI.
+![FBI Link screenshot](docs/screenshot.png)
 
-## Status
+## What you can do with it
 
-**Early alpha.** End-to-end flow works: auto-discover or manually add a 3DS, pick CIAs or drop a folder, watch per-file and aggregate progress/speed/ETA in real time. Ad-hoc signed builds are published automatically on every push to `main` — see [Releases](https://github.com/KingHavok/fbi-link-mac/releases). See [Roadmap](#roadmap).
+- **Auto-discover 3DS consoles** on your local network.
+- **Queue CIA or TIK files** by dragging them onto the window, picking with the file browser, or pointing at a whole folder.
+- **Queue remote URLs** — the 3DS downloads them directly from the origin.
+- **Pick a target 3DS and hit Send.** The Mac starts a small HTTP server, hands FBI the URL list, and streams files over.
+- **Watch live progress** — per-file bars with speed and ETA, plus a per-device bar on each 3DS in the sidebar.
+- **Keep your Mac awake** automatically for the duration of a transfer.
+- **Stop a transfer cleanly** at any time from the sidebar; the 3DS sees the stream drop immediately.
 
 ## Requirements
 
-- macOS 14 Sonoma or later (Intel or Apple Silicon, universal binary)
-- Xcode 16 to build
-- Nintendo 3DS running FBI with **Receive URLs over the network** open
+- macOS 14 Sonoma or later (universal binary; Intel and Apple Silicon).
+- A Nintendo 3DS running FBI, on the same Wi-Fi network as your Mac.
+- FBI's **Receive URLs over the network** screen open on the 3DS when you click Send.
 
-## Build
+## Install
 
-```sh
-brew install xcodegen
-xcodegen generate
-open FBILinkMac.xcodeproj
-```
+1. Go to the [Releases page](https://github.com/KingHavok/fbi-link-mac/releases) and download the latest `FBILinkMac-v1.0.0.zip` (or the latest non-prerelease).
+2. Unzip it. Drag **FBI Link.app** into your **Applications** folder.
 
-Or for quick iteration without Xcode project generation:
+## First launch
 
-```sh
-swift run FBILinkMac
-```
+FBI Link is ad-hoc signed, not notarised with Apple. macOS Sequoia and Sonoma will block it on the first double-click. The fix only takes a few seconds:
 
-## Wire protocol
+1. Double-click **FBI Link** in Applications. A dialog will say *"Apple could not verify FBI Link is free of malware…"* — click **Done**. Do **not** click *Move to Bin*.
+2. Open **System Settings → Privacy & Security** and scroll to the bottom.
+3. You'll see a message like *"FBI Link was blocked to protect your Mac."* Click **Open Anyway** next to it and authenticate with your password or Touch ID.
+4. Launch FBI Link again. A second *"Are you sure?"* dialog appears — click **Open**. The app starts.
 
-Preserved from the original for FBI compatibility:
+macOS will also ask for **Local Network** permission the first time you click Discover or Send. Grant it — the app can't reach your 3DS without it. If you ever need to change this later, it's under **System Settings → Privacy & Security → Local Network**.
 
-1. Mac opens TCP to `3DS:5000`.
-2. Mac sends `[UInt32 big-endian length][urls joined by \n, UTF-8]`.
-3. 3DS HTTP-GETs each URL from the Mac's local file server.
-4. 3DS sends a single byte back when done.
-5. Both sides close.
+> If you'd rather do it from the Terminal: `xattr -dr com.apple.quarantine /Applications/FBI\ Link.app` strips the quarantine flag and skips the Open Anyway dance.
 
-## Roadmap
+## Using it
 
-- [x] Wire protocol encode/decode
-- [x] `NWListener`-based HTTP file server with streaming + progress callbacks
-- [x] `NWConnection`-based sender
-- [x] Manual console add by IP
-- [x] Per-file progress bars + aggregate progress + transfer speed / ETA
-- [x] Drag-and-drop + `.fileImporter` for CIAs
-- [x] Auto-discover 3DS on LAN (ARP + `NSLocalNetworkUsageDescription`)
-- [x] GitHub Actions release workflow (universal, ad-hoc signed)
-- [x] Prevent idle sleep while a transfer is in progress
-- [x] Subnet sweep before ARP read (one-click discover on a cold cache)
-- [x] App icon
-- [x] Hardened Runtime
-- [x] App Sandbox opt-in
-- [ ] Notarisation in CI (needs paid Apple Developer account)
+1. On your 3DS, open **FBI → Remote Install → Receive URLs over the network**. The screen shows your 3DS's IP address.
+2. In FBI Link on your Mac, click **Discover 3DS** (the radio icon in the toolbar). It should find your console automatically and list it in the sidebar. If not, use **Add 3DS** to type its IP in manually.
+3. Click the 3DS in the sidebar to select it.
+4. Add some files: drag CIAs onto the window, or use the toolbar's **Add Files** / **Add URL** buttons. Folders work too — all `.cia` and `.tik` files inside are picked up.
+5. Click **Send** on the 3DS row. The 3DS will ask you to confirm — tap Yes, and the transfer starts.
+6. Progress bars update live. When everything turns green, you're done.
+
+Stop at any time by clicking **Stop** where Send used to be.
+
+## Known limitations
+
+- **Remote URLs have no progress bar.** When you use Add URL, FBI on the 3DS downloads directly from the origin server — the Mac is out of the loop, so byte-level progress isn't visible. The row shows *"Fetched by 3DS — progress not tracked"* instead of a misleading 0%.
+- **Single 3DS at a time.** The UI shows per-device progress because that's where it's heading, but right now one Send goes to one 3DS. If you select a different 3DS while a transfer is running, the current one has to finish or be stopped first.
+- **Ad-hoc signed.** See the first-launch section. Until I get a paid Apple Developer account and set up notarisation in CI, macOS will always make you jump through the Privacy & Security hoop on the first launch of each new build.
+
+## Found a bug?
+
+Open an issue at [github.com/KingHavok/fbi-link-mac/issues](https://github.com/KingHavok/fbi-link-mac/issues). The log pane at the bottom of the app is selectable and has a **Copy All** option in its right-click menu — pasting that into the issue makes it dramatically easier to diagnose.
+
+## For contributors
+
+Everything about the architecture, the wire protocol, the build process, and how this project got to 1.0 lives in [DEVLOG.md](DEVLOG.md).
 
 ## Credits
 
-- [Steveice10/FBI](https://github.com/Steveice10/FBI) — the tool this talks to.
-- [smartperson/3DS-FBI-Link](https://github.com/smartperson/3DS-FBI-Link) — prior Mac app whose wire protocol is preserved here.
-- [miltoncandelero/Boop](https://github.com/miltoncandelero/Boop) — auto-detection idea.
+- [Steveice10/FBI](https://github.com/Steveice10/FBI) — the on-device installer this app talks to.
+- [smartperson/3DS-FBI-Link](https://github.com/smartperson/3DS-FBI-Link) — the prior Mac client whose wire protocol is preserved here.
+- [miltoncandelero/Boop](https://github.com/miltoncandelero/Boop) — inspiration for the auto-discovery approach.
 
 ## License
 

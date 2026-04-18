@@ -3,6 +3,7 @@ name: Release
 on:
   push:
     branches: [main]
+    tags: ["v*"]
     paths-ignore:
       - "**/*.md"
       - "LICENSE"
@@ -65,7 +66,12 @@ jobs:
         run: |
           APP="build/Build/Products/Release/FBILinkMac.app"
           SHORT_SHA="${GITHUB_SHA::7}"
-          ZIP="FBILinkMac-build-${{ github.run_number }}-${SHORT_SHA}.zip"
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            SUFFIX="${GITHUB_REF_NAME}"
+          else
+            SUFFIX="build-${{ github.run_number }}-${SHORT_SHA}"
+          fi
+          ZIP="FBILinkMac-${SUFFIX}.zip"
           ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
           echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
           echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
@@ -73,14 +79,14 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: build-${{ github.run_number }}
-          name: Build ${{ github.run_number }} (${{ steps.package.outputs.short_sha }})
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('build-{0}', github.run_number) }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && format('FBI Link {0}', github.ref_name) || format('Build {0} ({1})', github.run_number, steps.package.outputs.short_sha) }}
           files: ${{ steps.package.outputs.zip }}
-          prerelease: true
-          make_latest: true
+          prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          make_latest: ${{ startsWith(github.ref, 'refs/tags/') }}
           generate_release_notes: true
           body: |
-            Automated build from commit `${{ github.sha }}` on `main`.
+            Build from commit `${{ github.sha }}`.
 
             > **Note:** this build is ad-hoc signed, not notarised. macOS will block it on first launch.
             >
